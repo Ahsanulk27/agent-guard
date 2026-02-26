@@ -4,7 +4,6 @@ import { processPayment } from "./services/wallet.js";
 import { createClient } from "redis";
 import { logTransaction } from "./services/audit.js";
 
-
 export const redisClient = createClient();
 
 redisClient.on("error", (err) => console.log("Redis Client Error", err));
@@ -38,6 +37,43 @@ app.get("/admin/audit", async (request, reply) => {
   return reply.send(parsed);
 });
 
+app.post("/admin/budget", async (request, reply) => {
+  const { agent_id, amount } = request.body as {
+    agent_id: string;
+    amount: number;
+  };
+
+  if (!agent_id || !amount) {
+    return reply.code(400).send({ error: "Missing agent_id or amount" });
+  }
+
+  const key = `budget:${agent_id}`;
+
+  const newBalance = await redisClient.incrByFloat(key, amount);
+
+  return reply.send({
+    message: "Budget updated",
+    agent_id,
+    new_balance: newBalance,
+  });
+});
+
+app.get("/admin/stats", async (request, reply) => {
+  const keys = await redisClient.keys("budget:*");
+
+  const stats = await Promise.all(
+    keys.map(async (key) => {
+      const balance = await redisClient.get(key);
+      return {
+        agent_id: key.replace("budget:", ""),
+        balance: parseFloat(balance || "0"),
+      };
+    }),
+  );
+
+  return reply.send(stats);
+});
+
 app.all("/*", async (request, reply) => {
   const MOCK_UPSTREAM = "http://localhost:4000";
   const targetUrl = `${MOCK_UPSTREAM}${request.url}`;
@@ -64,9 +100,16 @@ app.all("/*", async (request, reply) => {
   let data = await response.json();
 
   if (response.status === 402) {
-    const agent_id = request.headers['x-agent-id'] as string;
+    const agent_id = request.headers["x-agent-id"] as string;
     const invoice = data.invoice;
     const paymentSuccess = await processPayment(agent_id, invoice);
+    if (!paymentSuccess) {
+      return reply.code(403).send({
+        error: "AgentGuard_Insufficient_Budget",
+        message: `Agent ${agent_id} has insufficient funds to cover this ${invoice.amount_due} request.`,
+        invoice: invoice, 
+      });
+    }
     await logTransaction({
       type: "PAYMENT",
       url: request.url,
@@ -84,8 +127,6 @@ app.all("/*", async (request, reply) => {
 
   return reply.code(response.status).send(data);
 });
-
-
 
 app.listen({ port: 3000 }, () => {
   console.log("AgentGuard running on http://localhost:3000");
