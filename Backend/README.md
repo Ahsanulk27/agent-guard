@@ -6,7 +6,16 @@ AgentGuard is a stateful security proxy engineered for the 2026 agentic web. It 
 
 ## 🏗️ Project Architecture
 
-AgentGuard acts as a **Stateful Financial Layer**. Unlike standard proxies, it interprets the logical and financial state of every request to ensure agents remain within their operational and fiscal boundaries.
+AgentGuard acts as a **Stateful Financial Layer**. Unlike standard proxies, it treats agents as first-class entities with defined profiles, spending caps, and operational statuses.
+
+### Monorepo Structure
+
+```
+AGENTGUARD/
+├── backend/            # Fastify API, Redis Logic, & Wallet Service
+├── frontend/           # React Dashboard (Vite + Tailwind)
+└── README.md           # Project Documentation
+```
 
 ---
 
@@ -17,33 +26,22 @@ AgentGuard acts as a **Stateful Financial Layer**. Unlike standard proxies, it i
 To prevent agents from getting stuck in repetitive logic loops that drain API balances, AgentGuard implements **SHA-256 Request Fingerprinting**.
 
 - **Mechanism:** Every request body is hashed and stored in Redis with a sliding-window TTL.
-- **Enforcement:** If an identical request is detected more than 3 times within 60 seconds, the proxy trips a circuit breaker and returns a `429 Too Many Requests` or `403 Forbidden`.
+- **Enforcement:** If an identical request is detected more than 3 times within 60 seconds, the proxy trips a circuit breaker and returns a `403 Forbidden` with the reason `AgentGuard_Blocked`.
 
 ### 2. Autonomous x402 Negotiation
 
 AgentGuard implements the **"Invisible Wallet"** pattern, allowing agents to navigate paid APIs without manual developer intervention.
 
 - **Interception:** Captures `402 Payment Required` responses from upstream providers (standardized via the emerging x402 protocol).
-- **Authorization:** Automatically checks the specific agent's remaining budget in Redis.
-- **Resolution:** Processes the payment, injects a verification token, and retries the request seamlessly.
+- **Authorization:** Automatically checks the specific agent's `maxPerRequest` safety cap and `totalBudget`.
+- **Resolution:** Processes the payment, updates the JSON agent profile in Redis, and retries the request seamlessly.
 
-### 3. Multi-Tenant Budgeting
+### 3. Entity-Based Management
 
-The system manages granular spending limits for multiple agents simultaneously.
+The system moves beyond simple key-value pairs to a structured **Agent Entity Model**.
 
-- **Identity:** Agents are uniquely identified via the `x-agent-id` header.
-- **Persistence:** Real-time balances are maintained in Redis, allowing for instant "top-ups" and sub-cent accounting via atomic operations.
-
----
-
-## 📊 System Flow
-
-1. **Agent Request:** `POST /v1/chat/completions` (Headers: `x-agent-id`)
-2. **Pre-Handler:** SHA-256 Hashing + Redis Counter check for recursive loops
-3. **Upstream Proxy:** Forwarding to Provider (OpenAI, Anthropic, or Mock)
-4. **Challenge Handling:** If a `402` is returned, trigger `processPayment()` in `services/wallet.ts`
-5. **Ledger Update:** `LPUSH` transaction details to `agent_audit_log` for full observability
-6. **Response Delivery:** Return successful data to the Agent
+- **Governance:** Every agent has a status (`active`, `frozen`, `retired`) and a per-request spending limit.
+- **Persistence:** Real-time profiles are maintained as JSON strings in Redis, ensuring atomic updates and high-speed retrieval.
 
 ---
 
@@ -52,9 +50,9 @@ The system manages granular spending limits for multiple agents simultaneously.
 | Layer | Technology |
 | :--- | :--- |
 | **Runtime** | Node.js v20+ (ESM) |
-| **Framework** | Fastify (High-performance, low-overhead proxying) |
-| **State Store** | Redis (Atomic budget tracking & loop memory) |
-| **Language** | TypeScript (Strict type safety for financial logic) |
+| **Framework** | Fastify (High-performance proxying) |
+| **State Store** | Redis (JSON-serialized Agent profiles & audit logs) |
+| **Language** | TypeScript (Strict type safety) |
 | **Protocol** | x402 (Standardized HTTP Payment Required) |
 
 ---
@@ -69,71 +67,69 @@ The system manages granular spending limits for multiple agents simultaneously.
 ### Installation
 
 ```bash
-git clone https://github.com/your-repo/agentguard.git
-cd agentguard
+git clone https://github.com/Ahsanulk27/agent-guard.git
+cd agent-guard/backend
 npm install
 ```
 
 ### Running the System
 
-**Start Redis:**
+**1. Start Redis:**
 ```bash
+# In a separate terminal
 redis-server
 ```
 
-**Start the Mock Provider (Target API):**
+**2. Start the Mock Provider (Target API):**
 ```bash
+# From the /backend directory
 npx tsx watch src/mock/provider.ts
 ```
 
-**Start AgentGuard Proxy:**
+**3. Start AgentGuard Proxy:**
 ```bash
+# From the /backend directory
 npx tsx watch src/app.ts
-```
-
-**Register an Agent:**
-curl -X POST http://localhost:3000/admin/register 
-  -d '{ "id": "research_bot", "name": "Deep Research AI", "initialBudget": 15.00, "maxPerRequest": 0.50
-}'
 ```
 
 ---
 
-## 🧪 Testing
+## 🧪 API Reference & Testing
 
-Send a request via Postman or `curl` to `http://localhost:3000/v1/chat/completions`:
+### Register a New Agent
 
-```bash
-curl -X POST http://localhost:3000/v1/chat/completions \
-  -H "x-agent-id: research_bot" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Hello world"}'
+`POST http://localhost:3000/admin/register`
+
+```json
+{
+  "id": "research_bot",
+  "name": "Deep Research AI",
+  "initialBudget": 15.00,
+  "maxPerRequest": 0.50
+}
 ```
 
-Watch the budget deduct in real-time and check the audit log at:
+### Update / Top-up Budget
 
-```
-GET http://localhost:3000/admin/audit
-```
+`POST http://localhost:3000/admin/budget`
 
-Top up an existing agent:
-
-```bash
-curl -X POST http://localhost:3000/admin/budget 
-  -d '{ "agent_id": "research_bot", "amount": 5.50 }'
+```json
+{
+  "agent_id": "research_bot",
+  "amount": 10.00
+}
 ```
 
-View all the current registered agent stats at:
+### System Observability
 
-```
-GET http://localhost:3000/admin/stats
-```
+- **Live Stats:** `GET /admin/stats` — Returns all registered agent profiles
+- **Audit Ledger:** `GET /admin/audit` — Returns full transaction history
 
 ---
 
 ## 🗺️ Roadmap
 
-- [ ] **Cryptographic Signatures:** Transition from simple tokens to ECDSA-signed payment proofs.
-- [ ] **Confidence-Based Spending:** Integrate logic to only authorize payments if the agent's internal confidence score is > 0.8.
-- [ ] **Web3 Settlement:** Direct, trustless settlement via Base (Coinbase L2) smart contracts.
-- [ ] **UI Dashboard:** A real-time monitoring panel for managing multi-tenant agent budgets.
+- [x] **Entity-Based Management:** Shift from primitive strings to structured Agent JSON objects.
+- [ ] **UI Command Center:** A React-based dashboard for real-time monitoring and "Kill-Switch" control.
+- [ ] **API Key Mapping:** Transition from manual headers to secure `Authorization: Bearer` token mapping.
+- [ ] **Web3 Settlement:** Direct, non-custodial settlement via Coinbase Managed Wallets on Base L2.
