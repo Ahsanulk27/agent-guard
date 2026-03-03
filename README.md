@@ -1,59 +1,61 @@
 # AgentGuard: Multi-Tenant AI Financial Firewall
 
-**AgentGuard** is a stateful security proxy designed for the 2026 agentic web. It acts as an intelligent circuit breaker between autonomous AI agents and LLM providers, preventing "AI financial ruin" caused by infinite loops, logic errors, or unmanaged spending.
+AgentGuard is a stateful security proxy engineered for the 2026 agentic web. It acts as an intelligent **circuit breaker** between autonomous AI agents and LLM providers, preventing "AI financial ruin" caused by infinite loops, logic errors, or unmanaged spending.
 
 ---
 
 ## 🏗️ Project Architecture
 
-AgentGuard acts as a **Stateful Financial Layer**. It doesn't just proxy traffic; it interprets the logical and financial state of every request to protect the user's wallet.
+AgentGuard acts as a **Stateful Financial Layer**. Unlike standard proxies, it interprets the logical and financial state of every request to ensure agents remain within their operational and fiscal boundaries.
 
-### 🛡️ Core Security Pillars
+---
 
-#### 1. Recursive Loop Protection (Anti-Arson)
+## 🛡️ Core Security Pillars
+
+### 1. Recursive Loop Protection (Anti-Arson)
 
 To prevent agents from getting stuck in repetitive logic loops that drain API balances, AgentGuard implements **SHA-256 Request Fingerprinting**.
 
 - **Mechanism:** Every request body is hashed and stored in Redis with a sliding-window TTL.
-- **Enforcement:** If an identical request is detected more than 3 times within 60 seconds, the proxy trips a circuit breaker and returns a `403 Forbidden`.
+- **Enforcement:** If an identical request is detected more than 3 times within 60 seconds, the proxy trips a circuit breaker and returns a `429 Too Many Requests` or `403 Forbidden`.
 
-#### 2. Autonomous x402 Negotiation
+### 2. Autonomous x402 Negotiation
 
-AgentGuard implements the "Invisible Wallet" pattern, allowing agents to navigate paid APIs without manual developer intervention.
+AgentGuard implements the **"Invisible Wallet"** pattern, allowing agents to navigate paid APIs without manual developer intervention.
 
-- **Interception:** Captures `402 Payment Required` responses from upstream providers (standardized via the x402 protocol).
-- **Authorization:** Checks the specific agent's budget in Redis.
-- **Resolution:** Processes the "payment," injects a verification token, and automatically retries the request so the agent receives a seamless `200 OK`.
+- **Interception:** Captures `402 Payment Required` responses from upstream providers (standardized via the emerging x402 protocol).
+- **Authorization:** Automatically checks the specific agent's remaining budget in Redis.
+- **Resolution:** Processes the payment, injects a verification token, and retries the request seamlessly.
 
-#### 3. Multi-Tenant Budgeting
+### 3. Multi-Tenant Budgeting
 
 The system manages granular spending limits for multiple agents simultaneously.
 
-- **Identity:** Agents are identified via the `x-agent-id` header.
-- **Persistence:** Real-time balances are maintained in Redis, allowing for instant "top-ups" and sub-cent accounting.
+- **Identity:** Agents are uniquely identified via the `x-agent-id` header.
+- **Persistence:** Real-time balances are maintained in Redis, allowing for instant "top-ups" and sub-cent accounting via atomic operations.
 
 ---
 
 ## 📊 System Flow
 
-1. **Agent Request** → `POST /v1/chat/completions`
-2. **Pre-Handler** → SHA-256 Hashing + Redis Counter (Check for Loops)
-3. **Upstream Proxy** → Forward to Provider (Mock or Real)
-4. **Challenge Handling** → If `402`, trigger `processPayment()` in `services/wallet.ts`
-5. **Ledger Update** → `LPUSH` transaction details to `agent_audit_log`
-6. **Response Delivery** → Return successful data to Agent
+1. **Agent Request:** `POST /v1/chat/completions` (Headers: `x-agent-id`)
+2. **Pre-Handler:** SHA-256 Hashing + Redis Counter check for recursive loops
+3. **Upstream Proxy:** Forwarding to Provider (OpenAI, Anthropic, or Mock)
+4. **Challenge Handling:** If a `402` is returned, trigger `processPayment()` in `services/wallet.ts`
+5. **Ledger Update:** `LPUSH` transaction details to `agent_audit_log` for full observability
+6. **Response Delivery:** Return successful data to the Agent
 
 ---
 
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
-|---|---|
-| Runtime | Node.js (ESM) |
-| Framework | Fastify (High-performance proxying) |
-| State Store | Redis (Atomic budget tracking & loop memory) |
-| Language | TypeScript |
-| Protocol | x402 (HTTP Payment Required) |
+| :--- | :--- |
+| **Runtime** | Node.js v20+ (ESM) |
+| **Framework** | Fastify (High-performance, low-overhead proxying) |
+| **State Store** | Redis (Atomic budget tracking & loop memory) |
+| **Language** | TypeScript (Strict type safety for financial logic) |
+| **Protocol** | x402 (Standardized HTTP Payment Required) |
 
 ---
 
@@ -67,6 +69,8 @@ The system manages granular spending limits for multiple agents simultaneously.
 ### Installation
 
 ```bash
+git clone https://github.com/your-repo/agentguard.git
+cd agentguard
 npm install
 ```
 
@@ -84,19 +88,27 @@ npx tsx watch src/mock/provider.ts
 
 **Start AgentGuard Proxy:**
 ```bash
-npx tsx watch src/index.ts
+npx tsx watch src/app.ts
 ```
 
-**Seed an Agent Budget:**
-```bash
-redis-cli SET budget:research_bot 5.00
+**Register an Agent:**
+curl -X POST http://localhost:3000/admin/register 
+  -d '{ "id": "research_bot", "name": "Deep Research AI", "initialBudget": 15.00, "maxPerRequest": 0.50
+}'
 ```
 
 ---
 
 ## 🧪 Testing
 
-Send a request via Postman to `http://localhost:3000/v1/chat/completions` with the header `x-agent-id: research_bot`.
+Send a request via Postman or `curl` to `http://localhost:3000/v1/chat/completions`:
+
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "x-agent-id: research_bot" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello world"}'
+```
 
 Watch the budget deduct in real-time and check the audit log at:
 
@@ -104,11 +116,24 @@ Watch the budget deduct in real-time and check the audit log at:
 GET http://localhost:3000/admin/audit
 ```
 
+Top up an existing agent:
+
+```bash
+curl -X POST http://localhost:3000/admin/budget 
+  -d '{ "agent_id": "research_bot", "amount": 5.50 }'
+```
+
+View all the current registered agent stats at:
+
+```
+GET http://localhost:3000/admin/stats
+```
+
 ---
 
 ## 🗺️ Roadmap
 
-This is still under development with all local configuration currently.
-- [ ] **Signature Verification:** Move from simple tokens to cryptographic signatures (ECDSA).
-- [ ] **Confidence-Based Spending:** Only authorize payments if the agent's internal confidence score is > 0.8.
-- [ ] **Web3 Integration:** Direct settlement via Base (Coinbase L2) smart contracts.
+- [ ] **Cryptographic Signatures:** Transition from simple tokens to ECDSA-signed payment proofs.
+- [ ] **Confidence-Based Spending:** Integrate logic to only authorize payments if the agent's internal confidence score is > 0.8.
+- [ ] **Web3 Settlement:** Direct, trustless settlement via Base (Coinbase L2) smart contracts.
+- [ ] **UI Dashboard:** A real-time monitoring panel for managing multi-tenant agent budgets.
