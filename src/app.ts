@@ -3,6 +3,7 @@ import { analyzeRequest } from "./middleware/firewall.js";
 import { processPayment } from "./services/wallet.js";
 import { createClient } from "redis";
 import { logTransaction } from "./services/audit.js";
+import type { Agent } from "./types/Agent.js";
 
 export const redisClient = createClient();
 
@@ -43,35 +44,66 @@ app.post("/admin/budget", async (request, reply) => {
     amount: number;
   };
 
-  if (!agent_id || !amount) {
+  if (!agent_id || amount === undefined) {
     return reply.code(400).send({ error: "Missing agent_id or amount" });
   }
 
-  const key = `budget:${agent_id}`;
+  const key = `agent:${agent_id}`;
+  const rawData = await redisClient.get(key);
 
-  const newBalance = await redisClient.incrByFloat(key, amount);
+  if (!rawData) {
+    return reply.code(404).send({ error: "Agent not found" });
+  }
 
-  return reply.send({
-    message: "Budget updated",
-    agent_id,
-    new_balance: newBalance,
+  const agent: Agent = JSON.parse(rawData);
+  agent.totalBudget += amount;
+
+  await redisClient.set(key, JSON.stringify(agent));
+  await logTransaction({
+    type: "TOP_UP",
+    url: "INTERNAL",
+    agent_id: agent_id,
+    amount: amount,
+    success: true,
   });
+
+  return reply.send({ message: "Budget updated", agent });
 });
 
 app.get("/admin/stats", async (request, reply) => {
-  const keys = await redisClient.keys("budget:*");
-
-  const stats = await Promise.all(
-    keys.map(async (key) => {
-      const balance = await redisClient.get(key);
-      return {
-        agent_id: key.replace("budget:", ""),
-        balance: parseFloat(balance || "0"),
-      };
-    }),
+  const keys = await redisClient.keys("agent:*");
+  const agents = await Promise.all(
+    keys.map(async (key) => JSON.parse((await redisClient.get(key)) || "{}")),
   );
+  return reply.send(agents);
+});
 
-  return reply.send(stats);
+app.post("/admin/register", async (request, reply) => {
+  const { id, name, initialBudget, maxPerRequest } = request.body as any;
+
+  const key = `agent:${id}`;
+  if (await redisClient.exists(key)) {
+    return reply.code(409).send({ error: "Agent already exists" });
+  }
+  const newAgent: Agent = {
+    id,
+    name: name || id,
+    status: "active",
+    totalBudget: initialBudget || 0,
+    maxPerRequest: maxPerRequest || 0.5, // Default safety cap
+    createdAt: new Date().toISOString(),
+  };
+
+  await logTransaction({
+    type: "SYSTEM_REGISTRATION",
+    url: "INTERNAL",
+    agent_id: id,
+    amount: initialBudget || 0,
+    success: true,
+  });
+
+  await redisClient.set(key, JSON.stringify(newAgent));
+  return reply.code(201).send(newAgent);
 });
 
 app.all("/*", async (request, reply) => {
@@ -107,7 +139,7 @@ app.all("/*", async (request, reply) => {
       return reply.code(403).send({
         error: "AgentGuard_Insufficient_Budget",
         message: `Agent ${agent_id} has insufficient funds to cover this ${invoice.amount_due} request.`,
-        invoice: invoice, 
+        invoice: invoice,
       });
     }
     await logTransaction({

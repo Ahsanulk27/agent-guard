@@ -1,13 +1,5 @@
 import { redisClient } from "../app.js";
-
-interface AuditEntry {
-
-    type: string;
-    url: string;
-    amount?: number;
-    success: boolean;
-    timestamp: string;
-}
+import type { AuditEntry } from "../types/AuditEntry.js";
 
 export async function logTransaction(entry: Omit<AuditEntry, "timestamp">) {
     const fullEntry: AuditEntry = {

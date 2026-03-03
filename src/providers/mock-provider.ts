@@ -11,7 +11,7 @@ mock.post("/v1/chat/completions", async (request, reply) => {
       error: "Payment Required",
       invoice: {
         id: "invoice_123",
-        amount_due: 0.2,
+        amount_due: 0.5,
         currency: "usd",
         description: "AI completion request",
         pay_to: "x402://mock-provider-wallet-address",
