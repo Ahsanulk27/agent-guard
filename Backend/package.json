@@ -21,6 +21,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@fastify/cors": "^11.2.0",
     "@types/ioredis": "^4.28.10",
     "@types/node": "^25.3.0",
     "ioredis": "^5.9.3",

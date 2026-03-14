@@ -1,9 +1,17 @@
-export interface AuditEntry {
+export type AuditEventType =
+  | "INFO"
+  | "BLOCKED"
+  | "PAYMENT"
+  | "TOP_UP"
+  | "SYSTEM_REGISTRATION";
 
-    type: string;
-    url: string;
-    amount?: number;
-    agent_id?: string;
-    success: boolean;
-    timestamp: string;
+export interface AuditEntry {
+  id?: string;
+  type: AuditEventType;
+  url: string;
+  amount?: number;
+  agent_id?: string;
+  success: boolean;
+  message?: string;
+  timestamp: string;
 }
