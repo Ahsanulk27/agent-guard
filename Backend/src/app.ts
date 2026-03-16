@@ -37,10 +37,13 @@ app.addHook("preHandler", async (request, reply) => {
   }
   const decision = await analyzeRequest(request);
   if (!decision.allowed) {
+    const resolvedAgentId =
+      (request as any).agent?.id ?? (decision as any).agentId ?? "unknown";
+
     await logTransaction({
       type: "BLOCKED",
       url: request.url,
-      agent_id: (request.headers["x-agent-id"] as string) ?? "unknown",
+      agent_id: resolvedAgentId,
       success: false,
       message: decision.reason ?? "Unknown block reason",
     });
@@ -116,12 +119,12 @@ app.post("/admin/top-up", async (request, reply) => {
 });
 
 app.patch("/admin/agent/:id/toggle-freeze", async (request, reply) => {
-  const { id } = request.params as {id: string};
-  const { status } = request.body as {status: 'active' | 'frozen'};
+  const { id } = request.params as { id: string };
+  const { status } = request.body as { status: "active" | "frozen" };
   const key = `agent:${id}`;
   const rawData = await redisClient.get(key);
-  if (!rawData){
-    return reply.code(404).send({error: "Agent not found"});
+  if (!rawData) {
+    return reply.code(404).send({ error: "Agent not found" });
   }
   const agent: Agent = JSON.parse(rawData);
   agent.status = status;
@@ -131,32 +134,34 @@ app.patch("/admin/agent/:id/toggle-freeze", async (request, reply) => {
     url: "INTERNAL",
     agent_id: id,
     success: true,
-    message: `Agent status updated to ${status}`
-  })
+    message: `Agent status updated to ${status}`,
+  });
   return reply.send(agent);
-
-})
+});
 
 app.post("/admin/agent/:id/regenerate-key", async (request, reply) => {
   const { id } = request.params as { id: string };
   const key = `agent:${id}`;
   const rawData = await redisClient.get(key);
   if (!rawData) {
-    return reply.code(404).send({error: "Agent not found"});
+    return reply.code(404).send({ error: "Agent not found" });
   }
   const agent: Agent = JSON.parse(rawData);
-  agent.apiKey = generateApiKey();
+  const oldApiKey = agent.apiKey;
+  const newApiKey = generateApiKey();
+  await redisClient.del(`apiKey:${oldApiKey}`);
+  agent.apiKey = newApiKey;
   await redisClient.set(key, JSON.stringify(agent));
+  await redisClient.set(`apiKey:${newApiKey}`, id);
   await logTransaction({
     type: "INFO",
     url: "INTERNAL",
     agent_id: id,
     success: true,
-    message: `API Key rotated`
-  }
-  )
+    message: `API Key rotated`,
+  });
   return reply.send(agent);
-})
+});
 
 app.get("/admin/stats", async (request, reply) => {
   const keys = await redisClient.keys("agent:*");
@@ -193,6 +198,8 @@ app.post("/admin/register", async (request, reply) => {
     createdAt: new Date().toISOString(),
   };
 
+  const apiKeyLookupKey = `apiKey:${newAgent.apiKey}`;
+
   await logTransaction({
     type: "SYSTEM_REGISTRATION",
     url: "INTERNAL",
@@ -202,6 +209,7 @@ app.post("/admin/register", async (request, reply) => {
   });
 
   await redisClient.set(key, JSON.stringify(newAgent));
+  await redisClient.set(apiKeyLookupKey, id);
   return reply.code(201).send(newAgent);
 });
 
@@ -232,25 +240,23 @@ app.route({
 
     let response = await performRequest();
     let data = await response.json();
-
+    const agent = (request as any).agent;
     if (response.status === 402) {
-      const agent_id = request.headers["x-agent-id"] as string;
       const invoice = data.invoice;
-      const payment = await processPayment(agent_id, invoice);
+      const payment = await processPayment(agent.id, invoice);
       if (!payment.success) {
-        const isLimitExceeded =
-          payment.reason === "AMOUNT_EXCEEDS_LIMIT";
+        const isLimitExceeded = payment.reason === "AMOUNT_EXCEEDS_LIMIT";
         const errorCode = isLimitExceeded
           ? "AgentGuard_Limit_Exceeded"
           : "AgentGuard_Insufficient_Budget";
         const errorMessage = isLimitExceeded
           ? `Request of ${invoice.amount_due} exceeds your safety cap.`
-          : `Agent ${agent_id} has insufficient funds.`;
+          : `Agent ${agent.id} has insufficient funds.`;
 
         await logTransaction({
           type: "BLOCKED",
           url: request.url,
-          agent_id: agent_id,
+          agent_id: agent.id,
           amount: invoice.amount_due,
           success: false,
           message: errorMessage,
@@ -264,7 +270,7 @@ app.route({
       await logTransaction({
         type: "PAYMENT",
         url: request.url,
-        agent_id: agent_id,
+        agent_id: agent.id,
         amount: invoice.amount_due,
         success: true,
         message: `Auto-negotiated x402 payment for ${invoice.amount_due} ${invoice.currency}`,

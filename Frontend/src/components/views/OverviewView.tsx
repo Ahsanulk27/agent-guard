@@ -14,7 +14,6 @@ export function OverviewView() {
     const loadStats = async () => {
       try {
         const data = await api.getStats();
-        console.log("Stats from backend:", data);
 
         setAgents(data.agents);
       } catch (err) {

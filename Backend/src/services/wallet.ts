@@ -34,7 +34,3 @@ export async function processPayment(agent_id: string, invoice: Invoice) {
 }
 
 
-// start working on the top up, freeze and rotate key 
-// endpoints (return Agent body as response 
-// and chekc if you wanna add Audit logsfor these endpoint 
-// actions)
