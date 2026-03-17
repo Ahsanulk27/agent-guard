@@ -1,4 +1,4 @@
-import { redisClient } from "../app.js";
+import { redisClient } from "./redis.js";
 import type { AuditEntry } from "../types/AuditEntry.js";
 
 export async function logTransaction(entry: Omit<AuditEntry, "timestamp">) {

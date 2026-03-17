@@ -1,5 +1,5 @@
 import type { Agent } from "../types/Agent.js";
-import { redisClient } from "../app.js";
+import { redisClient } from "./redis.js";
 import type { Invoice } from "../types/Invoice.js";
 
 export async function processPayment(agent_id: string, invoice: Invoice) {

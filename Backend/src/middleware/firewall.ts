@@ -1,6 +1,7 @@
-import type { FastifyRequest } from "fastify";
+import type { FastifyRequest, FastifyReply } from "fastify";
 import { generateHash } from "../utils/utils.js";
-import { redisClient } from "../app.js";
+import { redisClient } from "../services/redis.js";
+import { logTransaction } from "../services/audit.js";
 
 export const analyzeRequest = async (request: FastifyRequest) => {
   const { method, url, body } = request;
@@ -45,4 +46,27 @@ export const analyzeRequest = async (request: FastifyRequest) => {
   }
 
   return { allowed: true, key };
+};
+
+export const firewallHook = async (request: FastifyRequest, reply: FastifyReply) => {
+  if (request.url.startsWith("/admin")) {
+    return;
+  }
+  const decision = await analyzeRequest(request);
+  if (!decision.allowed) {
+    const resolvedAgentId =
+      (request as any).agent?.id ?? (decision as any).agentId ?? "unknown";
+
+    await logTransaction({
+      type: "BLOCKED",
+      url: request.url,
+      agent_id: resolvedAgentId,
+      success: false,
+      message: decision.reason ?? "Unknown block reason",
+    });
+    return reply.code(403).send({
+      error: "AgentGuard_Blocked",
+      reason: decision.reason,
+    });
+  }
 };
