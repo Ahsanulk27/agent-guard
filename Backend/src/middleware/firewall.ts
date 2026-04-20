@@ -5,8 +5,7 @@ import { logTransaction } from "../services/audit.js";
 
 export const analyzeRequest = async (request: FastifyRequest) => {
   const { method, url, body } = request;
-  const authHeaders = request.headers["authorization"];
-  const apiKey = authHeaders?.replace("Bearer ", "");
+  const apiKey = request.headers["x-api-key"] as string;
   console.log(`[INCOMING], ${method}, ${url}`);
 
   if (!apiKey) {
@@ -49,7 +48,7 @@ export const analyzeRequest = async (request: FastifyRequest) => {
 };
 
 export const firewallHook = async (request: FastifyRequest, reply: FastifyReply) => {
-  if (request.url.startsWith("/admin")) {
+  if (request.url.startsWith("/admin") || request.url.startsWith("/auth")) {
     return;
   }
   const decision = await analyzeRequest(request);

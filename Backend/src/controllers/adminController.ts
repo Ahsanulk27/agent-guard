@@ -7,6 +7,7 @@ import { redisClient } from "../services/redis.js";
 import { logTransaction } from "../services/audit.js";
 import type { Agent } from "../types/Agent.js";
 import { generateApiKey } from "../utils/utils.js";
+import { userService } from "../services/userService.js";
 
 export async function getAllAuditEntries(
   request: FastifyRequest,
@@ -72,6 +73,8 @@ export async function registerAgent(
     maxIdenticalRequests,
   } = request.body as any;
 
+  const userId = (request.user as any).id;
+
   const key = `agent:${id}`;
   if (await redisClient.exists(key)) {
     return reply.code(409).send({ error: "Agent already exists" });
@@ -79,6 +82,7 @@ export async function registerAgent(
   const newAgent: Agent = {
     id,
     name: name || id,
+    ownerId: userId,
     status: "active",
     totalBudget: initialBudget || 0,
     spentBudget: 0,
@@ -91,16 +95,19 @@ export async function registerAgent(
 
   const apiKeyLookupKey = `apiKey:${newAgent.apiKey}`;
 
-  await logTransaction({
-    type: "SYSTEM_REGISTRATION",
-    url: "INTERNAL",
-    agent_id: id,
-    amount: initialBudget || 0,
-    success: true,
-  });
+  await Promise.all([
+    await redisClient.set(key, JSON.stringify(newAgent)),
+    await redisClient.set(apiKeyLookupKey, id),
+    await userService.linkAgentToUser(id, userId),
+    await logTransaction({
+      type: "SYSTEM_REGISTRATION",
+      url: "INTERNAL",
+      agent_id: id,
+      amount: initialBudget || 0,
+      success: true,
+    }),
+  ]);
 
-  await redisClient.set(key, JSON.stringify(newAgent));
-  await redisClient.set(apiKeyLookupKey, id);
   return reply.code(201).send(newAgent);
 }
 

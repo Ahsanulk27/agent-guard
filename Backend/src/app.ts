@@ -5,10 +5,16 @@ import fastifyCors from "@fastify/cors";
 import adminRoutes from "./routes/adminRoutes.js";
 import dotenv from "dotenv";
 import proxyRoutes from "./routes/proxyRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import fastifyJwt from "@fastify/jwt";
 dotenv.config();
 
 const app = Fastify();
 await connectRedis();
+
+app.register(fastifyJwt, {
+  secret: process.env.JWT_SECRET as string
+});
 
 app.register(fastifyCors, {
   origin: process.env.FRONTEND_URL || true,
@@ -20,6 +26,7 @@ app.addHook("preHandler", firewallHook);
 app.register(adminRoutes, {prefix: "/admin"});
 
 app.register(proxyRoutes);
+app.register(authRoutes, {prefix: "/auth"});
 
 app.listen({ port: 3000 }, () => {
   console.log("AgentGuard running on http://localhost:3000");

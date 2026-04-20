@@ -1,8 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { getAllAuditEntries, getStats, registerAgent, topUpAgent, toggleFreezeAgent, regenerateKey } from "../controllers/adminController.js";
+import { authenticate } from "../middleware/authMiddleware.js";
 
 
 export default async function adminRoutes(app: FastifyInstance){
+    app.addHook("preHandler", authenticate);
     app.get("/audit", getAllAuditEntries);
     app.get("/stats", getStats);
     app.post("/register", registerAgent);

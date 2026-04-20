@@ -1,6 +1,7 @@
 export interface Agent {
   id: string;
   name: string; // Human-friendly name
+  ownerId?: string;
   status: "active" | "frozen" | "retired" | "insufficient_funds";
   totalBudget: number; // The current balance
   spentBudget?: number;
