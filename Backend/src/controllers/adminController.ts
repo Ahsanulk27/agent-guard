@@ -98,7 +98,7 @@ export async function registerAgent(
   await Promise.all([
     await redisClient.set(key, JSON.stringify(newAgent)),
     await redisClient.set(apiKeyLookupKey, id),
-    await userService.linkAgentToUser(id, userId),
+    await userService.linkAgentToUser(userId, id),
     await logTransaction({
       type: "SYSTEM_REGISTRATION",
       url: "INTERNAL",
